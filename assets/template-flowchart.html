@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>流程图 · 主干直行</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#EEF1F5;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",system-ui,sans-serif;
+  color:#1B2130;-webkit-font-smoothing:antialiased;padding:32px 0}
+#canvas{position:relative;margin:0 auto;background:#fff;border-radius:10px}
+</style>
+</head>
+<body>
+<div id="canvas"><svg id="svg"></svg></div>
+<script>
+/* =========================================================================
+   流程图模板 · 主干直行（可选责任带）
+   设计核心：主干一条直线（判断条件朝主路径设计，全部“是”直下），“否”侧出；
+            出口标签补语义；连线就近接口；布局居中。
+   只改 DATA 段；渲染段不动。
+   ========================================================================= */
+
+// ==== DATA BEGIN ====
+const TITLE    = '报销审批流程';
+const SUBTITLE = '大额走审批 · 小额直通 · 驳回重提';
+
+/* 责任带（可选）：省略 LANES = 无责任带。带名纯文字，颜色按顺序自动取四色 */
+const LANES = [ {t:'员工'}, {t:'系统'}, {t:'经理'}, {t:'财务'} ];
+
+/* 主干：自上而下一条直线，判断的“是”出口直下
+   shape：'action'（默认·卡片）| 'decision'（菱形）| 'start' | 'end'（胶囊）
+   yes：判断直下出口标签（必填且补语义如 '是：大额'，裸 '是' lint 拦） */
+const TRUNK = [
+  { id:'s',  t:'开始',          shape:'start', lane:0 },
+  { id:'a',  t:'提交报销单',    lane:0 },
+  { id:'d1', t:'金额 > 1000？', shape:'decision', lane:1, yes:'是：大额' },
+  { id:'b',  t:'部门经理审批',  lane:2 },
+  { id:'d2', t:'通过？',        shape:'decision', lane:2, yes:'是：通过' },
+  { id:'c',  t:'打款',          lane:3 },
+  { id:'e',  t:'完成',          shape:'end', lane:3 },
+];
+
+/* 侧支：挂在主干判断的左/右出口，汇回主干节点
+   side:'l'|'r'（缺省 quick→l、err→r）· style:'quick'（琥珀）| 'err'（红）
+   label：出口标签（必填，补语义）· toSide：汇回接口侧（缺省按左右方向）
+   back:true = 汇回边虚线（回边/重试）· toLabel：汇回边标签 */
+const BRANCHES = [
+  { from:'d1', side:'l', label:'否：小额', style:'quick',
+    nodes:[{ id:'q1', t:'自动通过', lane:1 }], to:'c', toSide:'l' },
+  { from:'d2', side:'r', label:'否：驳回', style:'err', back:true, toLabel:'重提≤3次',
+    nodes:[{ id:'x1', t:'退回修改', lane:0 }], to:'a', toSide:'r' },
+];
+// ==== DATA END ====
+
+
+/* =========================================================================
+   渲染段（不要改）
+   ========================================================================= */
+const FONT = 'PingFang SC, Microsoft YaHei, Segoe UI, sans-serif';
+const FS = { title:26, body:12.5, note:10 };            // 全图只有这三级字号
+const TEXT = '#2C3441', SUB = '#67707F', BORDER = '#D8DEE7', PAPER = '#FFFFFF';
+const STYLE = { main:{ c:'#3E63DD' }, quick:{ c:'#8A6A12' }, err:{ c:'#B4232A' }, end:{ c:'#1B7D57' } };
+const LANE_PAL = [ ['#FCF8EF','#8A6A12'], ['#F5F8FE','#3E63DD'], ['#F9F5FC','#7B4A9E'], ['#F2F9F5','#1B7D57'] ];
+
+const CARD_H = 44, CAP_H = 36, DEC_H = 84;               // 节点高度
+const GAP = 46, CORR = 64, BAND_PAD = 26, TOP = 116;     // 间距 ≥44 → GAP 46
+const COL_X = 44, BAND_X0 = (LANES && LANES.length) ? 108 : 20, M_R = 20;
+
+const NS = 'http://www.w3.org/2000/svg';
+const svg = document.getElementById('svg');
+const mk = (t, a) => { const e = document.createElementNS(NS, t);
+  for (const k in a) e.setAttribute(k, a[k]); return e; };
+const add = e => svg.appendChild(e);
+const R = (x,y,w,h,fill,r,ex) => add(mk('rect', Object.assign(
+  { x,y,width:w,height:h,rx:r===undefined?8:r,fill,stroke:'none' }, ex||{})));
+const TX = (x,y,s,size,fill,weight,anchor,ex) => {
+  const t = mk('text', Object.assign({ x,y,'font-size':size,fill,'font-weight':weight||400,
+    'text-anchor':anchor||'start', 'font-family':FONT }, ex||{}));
+  t.textContent = s; add(t); };
+const estW = (s,size) => { let w=0;
+  for (const c of String(s)) w += size * (c.charCodeAt(0)>127 ? 1.0 : 0.56);
+  return Math.ceil(w); };
+
+/* ---- 数据整理：量尺寸、建索引 ---- */
+const byId = {};
+const meas = n => { const w = estW(n.t, FS.body);
+  if (n.shape === 'start' || n.shape === 'end') return { w: Math.max(w + 56, 96), h: CAP_H };
+  if (n.shape === 'decision') return { w: Math.max(w + 96, 150), h: DEC_H };
+  return { w: Math.max(w + 48, 120), h: CARD_H }; };
+TRUNK.forEach(n => { Object.assign(n, meas(n)); n.kind = 'trunk'; byId[n.id] = n; });
+BRANCHES.forEach(br => {
+  br.side = br.side || (br.style === 'err' ? 'r' : 'l');
+  br.nodes.forEach(n => { Object.assign(n, meas(n)); n.kind = 'branch'; n.br = br; byId[n.id] = n; });
+});
+const ALL = [...TRUNK, ...BRANCHES.flatMap(b => b.nodes)];
+
+/* ---- 纵向：主干顺序累加；侧支链挂靠（目标在上贴目标行，否则贴出口行） ---- */
+let y = TOP;
+TRUNK.forEach(n => { n.y = y; y += n.h + GAP; });
+BRANCHES.forEach(br => {
+  const from = byId[br.from], to = byId[br.to];
+  if (!from || !to) return;
+  const anchor = (to.y + to.h / 2 < from.y + from.h / 2) ? to.y + to.h / 2 : from.y + from.h / 2;
+  let cy = anchor;
+  br.nodes.forEach(n => { n.y = cy - n.h / 2; cy += n.h + GAP; });
+});
+
+/* ---- 横向：主干居中，左右分支区对称 ---- */
+const maxW = arr => arr.reduce((m, n) => Math.max(m, n.w), 0);
+const trunkW = maxW(TRUNK);
+const sideW = s => { const bs = BRANCHES.filter(b => b.side === s);
+  return bs.length ? maxW(bs.flatMap(b => b.nodes)) + CORR + 24 : 40; };
+const needL = sideW('l'), needR = sideW('r');
+const bandW = Math.max(needL + trunkW + needR + 24, 960 - BAND_X0 - M_R);
+const W = BAND_X0 + bandW + M_R;
+const trunkX = BAND_X0 + bandW / 2;
+const innerL = trunkX - trunkW / 2 - CORR, innerR = trunkX + trunkW / 2 + CORR;
+TRUNK.forEach(n => { n.x = trunkX - n.w / 2; });
+BRANCHES.forEach(br => br.nodes.forEach(n => { n.x = br.side === 'l' ? innerL - n.w : innerR; }));
+const cxOf = n => n.x + n.w / 2, cyOf = n => n.y + n.h / 2;
+
+/* ---- 责任带：按内容推导，重叠处从中间分 ---- */
+const LINT = [];
+const bands = (LANES || []).map((L, i) => {
+  const ns = ALL.filter(n => n.lane === i);
+  if (!ns.length) { LINT.push(`责任带「${L.t}」没有节点`); return null; }
+  return { L, i, y0: Math.min(...ns.map(n => n.y)) - BAND_PAD, y1: Math.max(...ns.map(n => n.y + n.h)) + BAND_PAD };
+}).filter(Boolean);
+for (let i = 1; i < bands.length; i++) {
+  if (bands[i].y0 < bands[i-1].y1 + 16) {
+    const mid = (bands[i-1].y1 + bands[i].y0) / 2;
+    bands[i-1].y1 = mid - 8; bands[i].y0 = mid + 8;
+  }
+}
+
+/* ---- 画布高：内容 + 图例，从内容推导 ---- */
+const contentBot = Math.max(...ALL.map(n => n.y + n.h), ...(bands.length ? bands.map(b => b.y1) : [0]));
+const LEG_Y = contentBot + 42;
+const H = LEG_Y + 44;
+
+svg.setAttribute('width', W); svg.setAttribute('height', H);
+svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+svg.dataset.kind = 'flowchart';
+Object.assign(document.getElementById('canvas').style, { width: W+'px', height: H+'px' });
+
+/* ---- 箭头 marker（每种线色一个） ---- */
+const COL2ID = {};
+const mid = c => { if (!COL2ID[c]) COL2ID[c] = 'm' + Object.keys(COL2ID).length; return COL2ID[c]; };
+Object.values(STYLE).forEach(s => mid(s.c));
+svg.insertAdjacentHTML('afterbegin', '<defs>' + Object.entries(COL2ID).map(([c, id]) =>
+  `<marker id="${id}" viewBox="0 0 9 9" refX="8" refY="4.5" markerWidth="8" markerHeight="8" orient="auto">
+   <path d="M0.5,1 L8,4.5 L0.5,8 Z" fill="${c}"/></marker>`).join('') + '</defs>');
+
+/* ---- 责任带 + 带名（纯文字，右对齐贴带左缘；先画当背景） ---- */
+bands.forEach(b => {
+  const p = LANE_PAL[b.i % 4];
+  R(BAND_X0, b.y0, bandW, b.y1 - b.y0, p[0], 12);
+  TX(BAND_X0 - 14, (b.y0 + b.y1) / 2 + 4.5, b.L.t, FS.body, p[1], 700, 'end');
+});
+
+/* ---- 边：折线 + 就近接口 ---- */
+const EDGES = [];
+const poly = (pts, color, dash, label, toLabel) => {
+  EDGES.push({ pts, color, dash, label, toLabel });
+  add(mk('path', { d:'M' + pts.map(p => p.join(',')).join(' L'), fill:'none', stroke:color,
+    'stroke-width':1.8, 'stroke-linejoin':'round', 'stroke-linecap':'round',
+    ...(dash ? { 'stroke-dasharray':dash } : {}), 'marker-end':`url(#${mid(color)})` }));
+};
+
+/* 主干边（判断的直下出口带 yes 标签；进入 end 用绿色） */
+TRUNK.slice(0, -1).forEach((n, i) => {
+  const m = TRUNK[i + 1], c = m.shape === 'end' ? STYLE.end.c : STYLE.main.c;
+  poly([[trunkX, n.y + n.h + 3], [trunkX, m.y - 3]], c, null,
+    n.shape === 'decision' ? (n.yes || '是') : null, null);
+});
+
+BRANCHES.forEach(br => {
+  const sc = STYLE[br.style].c, from = byId[br.from], to = byId[br.to];
+  const c0 = br.nodes[0], cl = br.nodes[br.nodes.length - 1];
+  const l = br.side === 'l';
+
+  /* 出口：判断侧顶点 → 链首；同排平进，不同排就近接顶/底边 */
+  const vx = l ? from.x : from.x + from.w, vy = cyOf(from);
+  if (Math.abs(vy - cyOf(c0)) <= 12)
+    poly([[vx, vy], [l ? c0.x + c0.w + 3 : c0.x - 3, vy]], sc, null, br.label, null);
+  else {
+    const ey = cyOf(c0) < vy ? c0.y + c0.h + 3 : c0.y - 3;
+    poly([[vx, vy], [cxOf(c0), vy], [cxOf(c0), ey]], sc, null, br.label, null);
+  }
+
+  /* 链内：竖直串联 */
+  for (let i = 0; i < br.nodes.length - 1; i++)
+    poly([[cxOf(br.nodes[i]), br.nodes[i].y + br.nodes[i].h + 3], [cxOf(br.nodes[i+1]), br.nodes[i+1].y - 3]], sc);
+
+  /* 汇回：同排平进侧边；不同排竖下/上再进侧边（就近接口） */
+  const dir = cxOf(to) > cxOf(cl) ? 1 : -1;
+  const ex = br.toSide === 'l' ? to.x - 3 : br.toSide === 'r' ? to.x + to.w + 3 : cxOf(to);
+  if (Math.abs(cyOf(cl) - cyOf(to)) <= 2)
+    poly([[dir > 0 ? cl.x + cl.w + 3 : cl.x - 3, cyOf(cl)], [ex, cyOf(cl)]], sc, br.back ? '7 6' : null, null, br.toLabel);
+  else {
+    const sy = cyOf(to) > cyOf(cl) ? cl.y + cl.h + 3 : cl.y - 3;
+    poly([[cxOf(cl), sy], [cxOf(cl), cyOf(to)], [ex, cyOf(to)]], sc, br.back ? '7 6' : null, null, br.toLabel);
+  }
+});
+
+/* ---- 边标签（白底垫片）：主干 yes 在线右侧，其余在最长水平段上方 ---- */
+const tag = (x0, yBase, text, color) => {
+  const w = estW(text, FS.note);
+  R(x0 - 5, yBase - 21, w + 10, 18, PAPER, 3);
+  TX(x0, yBase - 8, text, FS.note, color); };
+EDGES.forEach(e => {
+  if (e.label && e.pts.every(p => p[0] === e.pts[0][0]))            // 纯竖线：标签放右侧
+    return tag(trunkX + 12, e.pts[0][1] + 22, e.label, e.color);
+  [e.label, e.toLabel].forEach((t, k) => {
+    if (!t) return;
+    let seg = null, len = 0;
+    for (let i = 0; i < e.pts.length - 1; i++) {
+      const [x1, y1] = e.pts[i], [x2, y2] = e.pts[i+1];
+      if (Math.abs(y1 - y2) < 1 && Math.abs(x2 - x1) > len) { len = Math.abs(x2 - x1); seg = [Math.min(x1,x2), Math.max(x1,x2), y1]; }
+    }
+    if (!seg) return;
+    const w = estW(t, FS.note), [sx, ex, yy] = seg;
+    tag(Math.max(sx - 6, Math.min((sx + ex) / 2 - w / 2, ex - w + 6)), yy, t, e.color);
+  });
+});
+
+/* ---- 节点：普通白卡 / 菱形 / 起止胶囊 ---- */
+ALL.forEach(n => {
+  const cy = cyOf(n);
+  if (n.shape === 'start' || n.shape === 'end') {
+    R(n.x, n.y, n.w, n.h, '#E8F5EE', n.h / 2, { stroke:STYLE.end.c, 'stroke-width':1.5 });
+    TX(cxOf(n), cy + 4.5, n.t, FS.body, STYLE.end.c, 400, 'middle');
+  } else if (n.shape === 'decision') {
+    const c = n.kind === 'trunk' ? STYLE.main.c : STYLE[n.br.style].c;
+    add(mk('polygon', { points:`${cxOf(n)},${n.y} ${n.x+n.w},${cy} ${cxOf(n)},${n.y+n.h} ${n.x},${cy}`,
+      fill:PAPER, stroke:c, 'stroke-width':1.5 }));
+    TX(cxOf(n), cy + 4.5, n.t, FS.body, TEXT, 400, 'middle');
+  } else {
+    R(n.x, n.y, n.w, n.h, PAPER, 8, { stroke:BORDER, 'stroke-width':1 });
+    TX(cxOf(n), cy + 4.5, n.t, FS.body, TEXT, 400, 'middle');
+  }
+});
+
+/* ---- 图例 ---- */
+const LEG = [['主干 · 是（直下）', STYLE.main.c, null], ['分支 · 汇回', STYLE.quick.c, null],
+  ['回边 · 重试', STYLE.err.c, '7 6']];
+let lx = COL_X;
+LEG.forEach(([t, c, d]) => {
+  add(mk('line', { x1:lx, y1:LEG_Y, x2:lx+33, y2:LEG_Y, stroke:c, 'stroke-width':1.8,
+    ...(d?{'stroke-dasharray':d}:{}), 'marker-end':`url(#${mid(c)})` }));
+  TX(lx+42, LEG_Y+3.5, t, FS.note, SUB);
+  lx += 42 + estW(t, FS.note) + 28;
+});
+add(mk('polygon', { points:`${lx+16},${LEG_Y-9} ${lx+31},${LEG_Y} ${lx+16},${LEG_Y+9} ${lx+1},${LEG_Y}`,
+  fill:PAPER, stroke:STYLE.main.c, 'stroke-width':1.2 }));
+TX(lx+38, LEG_Y+3.5, '菱形 = 判断（出口必标条件）', FS.note, SUB);
+
+/* ---- 标题 ---- */
+TX(COL_X, 52, TITLE, FS.title, '#121A26', 700);
+if (SUBTITLE) TX(COL_X, 76, SUBTITLE, FS.note, '#7A8494');
+
+/* ---- 一致性 lint（check.js 拦） ---- */
+if (!TRUNK.some(n => n.shape === 'start')) LINT.push('缺 start 胶囊：读者不知道从哪开始');
+if (!TRUNK.some(n => n.shape === 'end')) LINT.push('缺 end 胶囊：分支要有明确终止态');
+const decs = ALL.filter(n => n.shape === 'decision');
+decs.forEach(n => {
+  const outs = BRANCHES.filter(b => b.from === n.id);
+  if (!outs.length) LINT.push(`判断「${n.t}」没有侧支出口：不是判断就改卡片`);
+  if (n.kind === 'branch') LINT.push(`判断「${n.t}」在侧支里：判断必须上主干，主干才是直线`);
+  if (!n.yes || n.yes === '是') LINT.push(`判断「${n.t}」直下出口是裸"是"：补语义，如"是：通过"`);
+  outs.forEach(b => { if (!b.label) LINT.push(`分支 ${b.from}→${b.to} 缺出口标签：条件必须标在箭头上`); });
+});
+BRANCHES.forEach(b => {
+  if (!byId[b.from] || !byId[b.to]) LINT.push(`分支 ${b.from}→${b.to} 的 id 不存在`);
+  else if (byId[b.from].shape !== 'decision') LINT.push(`分支起点「${byId[b.from].t}」不是判断：侧支只能挂在判断出口`);
+  if (!b.nodes || !b.nodes.length) LINT.push(`分支 ${b.from}→${b.to} 没有节点`);
+  if (!['quick','err'].includes(b.style)) LINT.push(`分支 ${b.from}→${b.to} 的 style 只能 quick/err`);
+});
+if (ALL.length > 15) LINT.push(`节点 ${ALL.length} 个（红线 15）：拆主图 + 子流程卡`);
+if (decs.length > 5) LINT.push(`判断 ${decs.length} 个（红线 5）：拆图`);
+if (BRANCHES.length > 4) LINT.push(`侧支 ${BRANCHES.length} 条（红线 4）：分支多说明该拆图`);
+if (LANES && LANES.length && (LANES.length < 2 || LANES.length > 7)) LINT.push('责任带 2–7 条');
+ALL.forEach(n => {
+  if (LANES && LANES.length && (n.lane == null || n.lane < 0 || n.lane >= LANES.length))
+    LINT.push(`节点「${n.t}」的 lane 越界/缺失`);
+});
+/* 几何后验：节点重叠 / 过近（间距红线 44） */
+for (let i = 0; i < ALL.length; i++) for (let j = i + 1; j < ALL.length; j++) {
+  const a = ALL[i], b = ALL[j];
+  const gx = Math.max(a.x - (b.x + b.w), b.x - (a.x + a.w), -1);
+  const gy = Math.max(a.y - (b.y + b.h), b.y - (a.y + a.h), -1);
+  if (gx < 0 && gy < 0) LINT.push(`节点重叠：「${a.t}」「${b.t}」`);
+  else if (gx < 20 && gy < 20) LINT.push(`节点过近：「${a.t}」「${b.t}」（间距红线 44，横向同排 ≥20）`);
+}
+if (LINT.length) svg.dataset.lint = LINT.join('|');
+</script>
+</body>
+</html>
