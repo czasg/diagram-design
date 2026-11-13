@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>流程图 · 主干直行</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#EEF1F5;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",system-ui,sans-serif;
+  color:#1B2130;-webkit-font-smoothing:antialiased;padding:32px 0}
+#canvas{position:relative;margin:0 auto;background:#fff;border-radius:10px}
+</style>
+</head>
+<body>
+<div id="canvas"><svg id="svg"></svg></div>
+<script>
+/* =========================================================================
+   流程图模板 · 主干直行（可选责任带 + 同侧分层走线）
+   设计核心：主干一条直线（判断条件朝主路径设计，全部“是”直下），“否”侧出；
+            出口标签补语义；连线就近接口；布局居中；
+            同侧多支自动分层——汇回行程远的走外层走廊，竖线不穿内侧节点
+            （入口/汇回的横线仍需横穿内层列，极端交替判断几何下可能贴卡，目检留意）。
+   只改 DATA 段；渲染段不动。
+   ========================================================================= */
+
+// ==== DATA BEGIN ====
+/*__DATA__*/
+// ==== DATA END ====
+/*__ENGINE__*/
+</script>
+</body>
+</html>

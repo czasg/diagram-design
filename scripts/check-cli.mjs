@@ -94,9 +94,10 @@ if (result.pass) {
   console.error(shotPath ? `pass:true  截图 → ${shotPath}` : 'pass:true');
   process.exit(0);
 } else {
-  const bad = ['badSizes', 'offCanvas', 'overlaps', 'outOfBox', 'linkHits', 'lint', 'tooWide']
-    .filter(k => (result[k] || []).length)
-    .map(k => `${k}×${result[k].length}`);
-  console.error('pass:false  ' + (bad.join('  ') || '未知'));
+  const keys = ['badSizes', 'offCanvas', 'overlaps', 'outOfBox', 'linkHits', 'lint', 'tooWide', 'sparseCards', 'empty'];
+  const bad = keys.filter(k => result[k] && (Array.isArray(result[k]) ? result[k].length : true));
+  console.error('pass:false  ' + (bad.map(k => Array.isArray(result[k]) ? `${k}×${result[k].length}` : k).join('  ') || '未知'));
+  /* 修法直接打出来：失败路径 0 次额外 Read（fix 同步在 JSON 里） */
+  if (result.fix) bad.forEach(k => console.error(`  → ${k}: ${result.fix[k] || ''}`));
   process.exit(1);
 }

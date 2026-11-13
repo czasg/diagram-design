@@ -72,7 +72,11 @@ for (const n of names) {
 const js = '/* Lucide icons subset (ISC License, https://lucide.dev) — 24x24, stroke=currentColor; arcs → beziers for Feishu */\nconst ICONS = '
   + JSON.stringify(out) + ';\n';
 writeFileSync(join(ASSETS, 'icons.js'), js);
-const tpl = join(ASSETS, 'template-structure.html');
-writeFileSync(tpl, readFileSync(tpl, 'utf8').replace(/\/\* Lucide icons subset[^\n]*\nconst ICONS = [^\n]*;\n/, js));
+const engine = join(ASSETS, 'engine-structure.js');
+writeFileSync(engine, readFileSync(engine, 'utf8').replace(/\/\* Lucide icons subset[^\n]*\nconst ICONS = [^\n]*;\n/, js));
+// 同步整文件参考产物（data + engine）
+const { execFileSync } = await import('node:child_process');
+execFileSync(process.execPath, [join(here, 'build-structure.mjs'),
+  join(ASSETS, 'template-structure.data.js'), join(ASSETS, 'template-structure.html')], { stdio: 'inherit' });
 console.log(JSON.stringify({ icons: Object.keys(out).length, missing: miss }));
 buildPreview();

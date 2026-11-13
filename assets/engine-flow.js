@@ -1,0 +1,255 @@
+/* =========================================================================
+   渲染段（不要改）
+   ========================================================================= */
+/* 红线数字单源：build-diagram.mjs 用 scripts/rules-core.mjs 的 JSON 覆盖本占位 */
+const LIMITS = /*__LIMITS__*/{"flowFrags":3,"flowFragDepth":2,"flowNotes":3};
+const FONT = 'PingFang SC, Microsoft YaHei, Segoe UI, sans-serif';
+const FS = { title:26, body:12.5, note:10 };            // 全图只有这三级字号
+const TEXT = '#2C3441', SUB = '#8A93A3';
+const LANE_PAL = [
+  ['#DCE9F8','#A9C6E8','#1B3A5C'], ['#FBEFD0','#E3C883','#5A4410'], ['#FBF3E2','#E5D2A8','#5C4B22'],
+  ['#E6E0F8','#B9ACDE','#392A63'], ['#FBE4E4','#E8B6B6','#5E2A2A'], ['#DFF2E3','#A8D6B5','#1D4A30'] ];
+const STAGE_PAL = [ ['#3E63DD','#F5F8FE'], ['#8A6A12','#FCF8EF'], ['#1B7D57','#F2F9F5'], ['#7B4A9E','#F9F5FC'] ];
+
+const COL_X = 44, LANE_X0 = 220, LANE_GAP_MIN = 150;
+const LANE_Y = 112, LANE_H = 40, CAP_W = 112;
+const MSG = 62, PAD_T = 50, PAD_B = 28, GAP = 10, TOP = 184;
+const R_DOT = 16;          /* 圆点半径：直径 32px，不要改小 */
+
+LANES.forEach((L, i) => { const p = LANE_PAL[i % 6]; L.f = L.f || p[0]; L.e = L.e || p[1]; L.i = L.i || p[2]; });
+/* 超过 4 阶段：同色相循环，不再加新色相 */
+STAGES.forEach((s, i) => { const p = STAGE_PAL[i % 4]; s.color = s.color || p[0]; s.bg = s.bg || p[1]; });
+
+/* 画布宽从泳道数推导：泳道间距不小于 LANE_GAP_MIN */
+const W = Math.max(1180, LANE_X0 + (LANES.length - 1) * LANE_GAP_MIN + 120);
+const LANE_X1 = W - 120;
+const LX = LANES.map((_, i) => LANES.length === 1 ? (LANE_X0 + LANE_X1) / 2
+  : LANE_X0 + (LANE_X1 - LANE_X0) * (i / (LANES.length - 1)));
+
+/* 纵向累积（不要手写 y） */
+const FRAGS = [], NOTES = [];
+let y = TOP, fragDepth = 0;
+STAGES.forEach((s, si) => {
+  s.y0 = y; s.items = [];
+  let c = y + PAD_T, lastB = c;
+  const walk = (list, depth, F) => list.forEach(m => {
+    if (Array.isArray(m)) {                                   // 普通消息
+      s.items.push({ m, y: c });
+      for (let p = F; p; p = p.parent) p.rows.push({ m, y: c });
+      lastB = c + PAD_B; c += MSG; return;
+    }
+    if (m.note != null) {                                     // 注释：占一行
+      const ov = m.over || [0, 0];
+      NOTES.push({ s, text: m.note, a: Math.min(...ov), b: Math.max(...ov), y: c - 14 });
+      lastB = c + 6; c += 40; return;
+    }
+    if (m.frag) {                                             // 片段框
+      const G = { s, si, kind: m.frag, label: m.label || '', depth, parent: F, top: c - 30, seps: [], rows: [] };
+      FRAGS.push(G); fragDepth = Math.max(fragDepth, depth + 1);
+      c += 24;
+      const brs = m.branches || [{ guard: m.guard, msgs: m.msgs || [] }];
+      brs.forEach((b, bi) => {
+        if (bi) { c += 12; G.seps.push({ y: c - 40, guard: b.guard }); }
+        else G.g0 = b.guard;
+        walk(b.msgs || [], depth + 1, G);
+      });
+      G.bottom = c - MSG + 26; lastB = G.bottom + 16; c += 14;
+    }
+  });
+  walk(s.msgs, 0, null);
+  s.y1 = lastB;
+  y = s.y1 + GAP;
+});
+/* 克制规则（红线见 rules-core.mjs）：超了说明这张图该拆，写入 lint 让 check.js 拦下 */
+const LINT = [];
+if (FRAGS.length > LIMITS.flowFrags) LINT.push(`片段 ${FRAGS.length} 个（建议 ≤ ${LIMITS.flowFrags}）：只框真正影响理解的分支 / 重试，其余写进注释或拆图`);
+if (fragDepth > LIMITS.flowFragDepth) LINT.push(`片段嵌套 ${fragDepth} 层（建议 ≤ ${LIMITS.flowFragDepth}）`);
+if (NOTES.length > LIMITS.flowNotes) LINT.push(`注释 ${NOTES.length} 条（建议 ≤ ${LIMITS.flowNotes}）：注释多说明消息标签没写清`);
+const LINE_TOP = LANE_Y + LANE_H;
+const LINE_BOT = STAGES[STAGES.length - 1].y1 + 24;
+const LEG_Y = LINE_BOT + 36;
+const H = LEG_Y + 40;                                   // 画布高从内容推导
+
+const NS = 'http://www.w3.org/2000/svg';
+const svg = document.getElementById('svg');
+svg.setAttribute('width', W); svg.setAttribute('height', H);
+svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+Object.assign(document.getElementById('canvas').style, { width: W+'px', height: H+'px' });
+
+const mk = (t, a) => { const e = document.createElementNS(NS, t);
+  for (const k in a) e.setAttribute(k, a[k]); return e; };
+const add = e => svg.appendChild(e);
+const R = (x,y,w,h,fill,r,ex) => add(mk('rect', Object.assign(
+  { x,y,width:w,height:h,rx:r===undefined?8:r,fill,stroke:'none' }, ex||{})));
+const TX = (x,y,s,size,fill,weight,anchor,ex) => {
+  const t = mk('text', Object.assign({ x,y,'font-size':size,fill,'font-weight':weight||400,
+    'text-anchor':anchor||'start', 'font-family':FONT }, ex||{}));
+  t.textContent = s; add(t); };
+const estW = (s,size) => { let w=0;
+  for (const c of String(s)) w += size * (c.charCodeAt(0)>127 ? 1.0 : 0.56);
+  return Math.ceil(w); };
+
+/* 标签避开泳道线：候选位置打分，压线判负（与 layout_lib.mjs 的 pick_label_x 同参） */
+function pickX(sx, ex, w) {
+  const lo = Math.min(sx,ex), hi = Math.max(sx,ex);
+  const minX = lo+6, maxX = hi-w-6;
+  if (maxX < minX) return (sx+ex)/2 - w/2;
+  const safe = x => Math.min(maxX, Math.max(minX, x));
+  const dist = x => { let d = Infinity;
+    for (const L of LX) {
+      if (x+w < L-4 || x > L+4) d = Math.min(d, Math.abs(x+w/2-L));
+      else return -1;
+    } return d; };
+  const cands = [0.5,0.34,0.66,0.2,0.8,0.12,0.88].map(f => safe(lo+(hi-lo)*f-w/2));
+  let best = cands[0], bd = -2;
+  for (const c of cands) { const d = dist(c); if (d > bd) { bd = d; best = c; } }
+  return best;
+}
+
+/* 箭头 marker，每阶段一色 */
+svg.insertAdjacentHTML('afterbegin', '<defs>' + STAGES.map((s, i) =>
+  `<marker id="a${i}" viewBox="0 0 9 9" refX="8" refY="4.5" markerWidth="8" markerHeight="8" orient="auto">
+   <path d="M0.5,1 L8,4.5 L0.5,8 Z" fill="${s.color}"/></marker>
+   <marker id="o${i}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="9" markerHeight="9" orient="auto">
+   <path d="M1,1.5 L8.5,5 L1,8.5" fill="none" stroke="${s.color}" stroke-width="1.6" stroke-linejoin="round"/></marker>`).join('') + '</defs>');
+const mix = (hex, base, t) => { const p = h => [1,3,5].map(i => parseInt(h.slice(i, i+2), 16));
+  const a = p(hex), b = p(base);
+  return '#' + a.map((v, i) => Math.round(v*(1-t) + b[i]*t).toString(16).padStart(2,'0')).join(''); };
+if (LINT.length) svg.dataset.lint = LINT.join('|');
+
+/* 标题 */
+TX(COL_X, 52, TITLE, FS.title, '#121A26', 700);
+if (SUBTITLE) TX(COL_X, 76, SUBTITLE, FS.note, '#7A8494');
+
+/* ① 分区带 */
+STAGES.forEach(s => {
+  R(20, s.y0, W - 40, s.y1 - s.y0, s.bg, 12);
+  R(20, s.y0 + 18, 4, s.y1 - s.y0 - 36, s.color, 2);
+});
+
+/* ② 泳道竖线：粗而浅 */
+LX.forEach(x => add(mk('line', { x1:x, y1:LINE_TOP, x2:x, y2:LINE_BOT,
+  stroke:'#A9B5C4', 'stroke-width':2.2, 'stroke-dasharray':'6 6' })));
+
+/* ③ 顶部胶囊 */
+LX.forEach((x, i) => {
+  const L = LANES[i], cw = Math.max(CAP_W, estW(L.t, FS.body) + 28);
+  R(x - cw/2, LANE_Y, cw, LANE_H, L.f, LANE_H/2, { stroke:L.e, 'stroke-width':1.5 });
+  TX(x, LANE_Y + LANE_H/2 + 4.5, L.t, FS.body, L.i, 700, 'middle');
+});
+
+/* ③½ 片段框：横向范围 = 框内消息涉及的泳道（含自处理标签）± 余量；内层先算，外层包住内层 */
+for (let i = FRAGS.length - 1; i >= 0; i--) {
+  const G = FRAGS[i]; let lo = Infinity, hi = -Infinity;
+  G.rows.forEach(({ m }) => {
+    const [f, t, label, meta, , self] = m;
+    lo = Math.min(lo, LX[f], LX[t]); hi = Math.max(hi, LX[f], LX[t]);
+    if (self) hi = Math.max(hi, LX[f] + R_DOT + 33 + Math.max(estW(label, FS.body), meta ? estW(meta, FS.note) + 8 : 0) - 34);
+  });
+  G.x0 = lo - R_DOT - 18; G.x1 = hi + 34;
+  FRAGS.filter(k => k.parent === G).forEach(k => { G.x0 = Math.min(G.x0, k.x0 - 10); G.x1 = Math.max(G.x1, k.x1 + 10); });
+  const tabW = estW(G.kind, FS.note) + 14;
+  G.x1 = Math.max(G.x1, G.x0 + tabW + estW(G.label, FS.note) + 24);
+  G.x0 = Math.max(G.x0, LANE_X0 - 60); G.x1 = Math.min(G.x1, W - 28);
+}
+FRAGS.forEach(G => {
+  const c = G.s.color, line = mix(c, '#FFFFFF', 0.55);
+  R(G.x0, G.top, G.x1 - G.x0, G.bottom - G.top, 'none', 6, { stroke: line, 'stroke-width': 1 });
+  const tabW = estW(G.kind, FS.note) + 14;
+  R(G.x0, G.top, tabW, 17, c, 4);
+  TX(G.x0 + tabW / 2, G.top + 12, G.kind, FS.note, '#FFFFFF', 700, 'middle');
+  if (G.label) TX(G.x0 + tabW + 8, G.top + 12, G.label, FS.note, c, 500);
+  /* 分支条件：带阶段底色垫片，避免和泳道虚线糊在一起 */
+  const guard = (t, gy) => { const w = estW(`[${t}]`, FS.note);
+    R(G.x0 + 5, gy - 9, w + 6, 13, G.s.bg, 3); TX(G.x0 + 8, gy, `[${t}]`, FS.note, SUB); };
+  if (G.g0) guard(G.g0, G.top + 31);
+  G.seps.forEach(sp => {
+    add(mk('line', { x1: G.x0, y1: sp.y, x2: G.x1, y2: sp.y, stroke: line, 'stroke-width': 1, 'stroke-dasharray': '4 4' }));
+    if (sp.guard) guard(sp.guard, sp.y + 13);
+  });
+});
+
+/* ③¾ 注释：白底虚线框，盖在泳道线上 */
+NOTES.forEach(N => {
+  const tw = estW(N.text, FS.note);
+  let x0 = LX[N.a] - 40, x1 = LX[N.b] + 40;
+  if (x1 - x0 < tw + 24) { const cx = (LX[N.a] + LX[N.b]) / 2; x0 = cx - tw / 2 - 12; x1 = cx + tw / 2 + 12; }
+  R(x0, N.y - 12, x1 - x0, 24, '#FFFFFF', 4, { stroke: mix(N.s.color, '#FFFFFF', 0.5), 'stroke-width': 1, 'stroke-dasharray': '3 3' });
+  TX((x0 + x1) / 2, N.y + 3.5, N.text, FS.note, TEXT, 400, 'middle');
+});
+
+/* ④ 左侧：大号编号（透明）+ 名称，整块垂直居中 */
+STAGES.forEach(s => {
+  const cy = (s.y0 + s.y1) / 2;
+  TX(COL_X, cy - 2, s.no, FS.title, s.color, 700, 'start', { opacity:0.28 });
+  TX(COL_X, cy + 20, s.name, FS.body, s.color, 700);
+});
+
+/* ⑤ 消息 */
+let seq = 0;
+STAGES.forEach((s, si) => {
+  s.items.forEach(({ m, y: my }) => {
+    const [f, t, label, meta, kind, self] = m;
+    seq++;
+    const async = kind === 'async', back = kind === 1 || kind === true;
+    const c = s.color, op = back ? .8 : 1, dash = back ? '6 5' : null;
+    const x1 = LX[f], x2 = LX[t];
+
+    if (self) {
+      /* 自处理：⊐ 小方括号；标签与注释作为一组，右侧放不下就整体翻到左侧 */
+      const bw = 18, bh = 11, bx = x1 + R_DOT + 3;
+      /* 箭头用 marker-end，不单独画填充三角——飞书 SVG 解析器会把它转成朝上的三角形节点 */
+      add(mk('path', { d:`M${bx},${my-bh} H${bx+bw} V${my+bh} H${bx}`,
+        fill:'none', stroke:c, 'stroke-width':1.7, opacity:op, 'stroke-linejoin':'round',
+        'marker-end':`url(#a${si})` }));
+      const gw = Math.max(estW(label, FS.body), meta ? estW(meta, FS.note) + 8 : 0);
+      const flip = bx + bw + 12 + gw > W - 28;
+      const ax = flip ? x1 - R_DOT - 10 : bx + bw + 12, anchor = flip ? 'end' : 'start';
+      TX(ax, my + 4.5, label, FS.body, TEXT, 400, anchor);
+      if (meta) {
+        const mw = estW(meta, FS.note), mx = flip ? ax - mw : ax;
+        R(mx - 4, my + 10, mw + 8, 14, s.bg, 3);
+        TX(mx, my + 20.5, meta, FS.note, SUB);
+      }
+    } else {
+      const dir = x2 > x1 ? 1 : -1;
+      const sx = x1 + dir*(R_DOT+4), ex = x2 - dir*10;
+      add(mk('line', { x1:sx, y1:my, x2:ex, y2:my, stroke:c, 'stroke-width':1.8, opacity:op,
+        ...(dash?{'stroke-dasharray':dash}:{}), 'marker-end':`url(#${async ? 'o' : 'a'}${si})`,
+        ...(async?{'data-arrow':'open'}:{}) }));
+      const lw = estW(label, FS.body), lx = pickX(sx, ex, lw);
+      R(lx-5, my-18, lw+10, 16, s.bg, 3);           /* 垫片用阶段底色，不是白色 */
+      TX(lx, my-6, label, FS.body, TEXT, 400);
+      if (meta) {
+        const mw = estW(meta, FS.note), mx = pickX(sx, ex, mw);
+        R(mx-4, my+6, mw+8, 14, s.bg, 3);
+        TX(mx, my+16.5, meta, FS.note, SUB);
+      }
+    }
+
+    /* 圆点：r=16 + 白圈 r=19（不要改小） */
+    add(mk('circle', { cx:x1, cy:my, r:R_DOT+3, fill:'#FFFFFF' }));
+    add(mk('circle', { cx:x1, cy:my, r:R_DOT, fill:c }));
+    TX(x1, my+4.5, String(seq), FS.body, '#FFFFFF', 700, 'middle');
+  });
+});
+
+/* ⑥ 图例 */
+const usesAsync = STAGES.some(s => s.items.some(({ m }) => m[4] === 'async'));
+const LEG = [['实线 = 请求 / 调用', '#4A5461', null], ['虚线 = 返回 / 回流', '#5A6470', '6 5'],
+  ...(usesAsync ? [['开口箭头 = 异步 / 不等待', '#4A5461', null, 1]] : [])];
+let lx = COL_X;
+svg.querySelector('defs').insertAdjacentHTML('beforeend', LEG.map((l, i) => l[3]
+  ? `<marker id="lg${i}" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="9" markerHeight="9" orient="auto">
+     <path d="M1,1.5 L8.5,5 L1,8.5" fill="none" stroke="${l[1]}" stroke-width="1.6"/></marker>`
+  : `<marker id="lg${i}" viewBox="0 0 9 9" refX="8" refY="4.5" markerWidth="8" markerHeight="8" orient="auto">
+     <path d="M0.5,1 L8,4.5 L0.5,8 Z" fill="${l[1]}"/></marker>`).join(''));
+LEG.forEach(([t, c, d, open], i) => {
+  add(mk('line', { x1:lx, y1:LEG_Y, x2:lx+33, y2:LEG_Y, stroke:c, 'stroke-width':1.8,
+    ...(d?{'stroke-dasharray':d}:{}), 'marker-end':`url(#lg${i})`, ...(open?{'data-arrow':'open'}:{}) }));
+  TX(lx+42, LEG_Y+3.5, t, FS.note, '#67707F');
+  lx += 42 + estW(t, FS.note) + 32;
+});
+add(mk('circle', { cx:lx+9, cy:LEG_Y, r:9, fill:STAGES[0].color }));
+TX(lx+9, LEG_Y+3.5, '1', FS.note, '#fff', 700, 'middle');
+TX(lx+24, LEG_Y+3.5, '圆点 = 步骤序号，颜色 = 所属阶段', FS.note, '#67707F');

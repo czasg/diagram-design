@@ -7,7 +7,7 @@ description: 画系统结构图（分层架构、业务域划分、部署分区�
 
 输出**单个自包含 HTML 文件**（内联 SVG）；需要飞书画板时，再用同一份 HTML 一条命令转过去。坐标由模板自动推导，你只写数据。
 
-本文件讲流程与判断；参数与写法在 `references/`，按 Step 2 结论只读命中的那份。
+本文件讲流程与判断；参数与写法在 `references/`，按 Step 2 结论只读命中的那份。三种图都只写 DATA 再 `build-*` 拼引擎；建模注释与数据**一次写入**；自检默认不截图，设计验收时再 `--shot`。
 
 ---
 
@@ -23,9 +23,16 @@ description: 画系统结构图（分层架构、业务域划分、部署分区�
 
 ## 设计流程
 
-### Step 1 · 内容建模（写出来，不要在心里做；写在数据文件顶部注释里）
+**角色定位：你是设计师，不是审稿人。** 全程从开局视角带——先定主线、关系、走线与层次（Step 1–3 一次成型），自检（Step 4）只做落地确认。不要先画一版再以「纠错」姿态回头改；结构问题在建模阶段就消掉。
 
-**模板只提供语法，不提供结构。** 先按下面四问把内容建模，再决定怎么摆。直接照抄示例骨架（如“左侧层名 + 每层一排”“主区 + 侧栏”）是最常见的失败。
+**工具轮次（省往返，不省思考）：**
+- 三种图统一：**一次 Write** 写完 `diagram.data.js`（Step 1 注释 + 图数据同文件，`icon:` 随数据一遍选好），再 **`build-* --check`**（一条命令出 build + 自检结果）；不要拆成「先注释后数据」多趟
+- `pass:false`：尽量**一次改完数据**再 `build-* --check`，不要改一点跑一点
+- 自检默认**不带** `--shot`；`pass:true` 后需要设计验收时再加 `--shot` 截图、再 Read PNG
+
+### Step 1 · 内容建模 + 布局策略（写出来，不要在心里做；写在数据文件顶部注释里）
+
+**模板只提供语法，不提供结构。** 先按下面把内容建模，**同一遍把布局策略定掉**，再落数据。直接照抄示例骨架（如“左侧层名 + 每层一排”“主区 + 侧栏”）是最常见的失败。
 
 1. **主线**：读者 3 秒内要得到什么 → 当副标题
 2. **逐块定关系类型**——这决定这一块怎么画：
@@ -43,14 +50,21 @@ description: 画系统结构图（分层架构、业务域划分、部署分区�
    - B 卡片：名字 + 一行说明（推荐）
    - C 卡片 + 多行说明
 4. **补料**：某块内容撑不起选定的深度（只有名字、没说明）→ **先补内容**（职责、协议、产品名、用途）；实在补不出 → 全图一起降级。**禁止一块有说明、一块没说明。**
+5. **规划条目数（配合模板，不画完再硬折）**：**条目数是设计变量**——先凑整齐的数再落数据（偶数 / 目标列数整数倍；流水线能并成一行就并）。怎么凑、`wrap:N` 怎么写见 `references/structure.md`「条目数与竖版」。
+6. **布局策略（与建模同遍定，不留给渲染后补）**：
+   - 结构图：层 `tag`、流水线 `flow`、超 5 项 `wrap` / 子分组、侧挂 `tint`、子分组上下堆叠——细则见 `references/structure.md`
+   - 流程图：主干哪条、条件怎么翻、同侧几条支、有无长汇回线（有 → 开局加 `LANES`）→ 细则见 `references/flowchart.md` 设计核心
 
-检查清单（写完建模自问）：
+检查清单（写完建模自问；**与 DATA 同一遍写进文件，不要只在心里过**）：
 - 每块的关系类型都写了吗？有流水线却画成并列格子 = 丢了这张图最重要的信息
 - 有没有只有 2–3 个短词的块？→ 合并到相邻块，或补内容
-- 每块的条目数接近吗？差太多会一行挤一行空 → 拆分或合并
-- **有没有哪一层非流水线横排超过 5 个子项？** → 必须 `wrap:N` 换行，或拆成带 `title` 的子分组（`flow` 流水线除外，箭头要求相邻）。不改会被自检 `lint` / `tooWide` 拦下
+- **条目数凑齐了吗？**、各组条目数接近吗？→ 不齐先凑再落数据（细则见 structure.md）
+- **横排子项超 5 了吗？长 `flow` 会撑爆一行吗？** → `wrap:N` 或拆子分组 / 合并步数（写法见 structure.md）
+- **估出来像横幅吗（并排分组相乘、最宽行过多）？** → 分组改上下堆叠、压条目数（见 structure.md「条目数与竖版」）
+- **图标随数据选好了吗？** → 查表最接近的即可，**没有就随手挑一个**，不逐条权衡、不走新增流程
+- 流程图：出口语义、侧区分层、长线地面——是否已在数据注释里写明决策？
 
-流程图的建模问法（不是块关系，是路径）：① **主干是哪条路**——读者最该关注的那条（叙事主线），决定判断条件怎么写；② 有几个判断、每个判断的例外是什么、要不要重试/回边；③ 出口语义怎么补（"是：大额"而不是"是"）；④ 每步谁负责是不是读者需求——是才加责任带。答案写进数据注释，再按 `references/flowchart.md` 的设计核心出图。
+流程图的建模问法（路径，不是块关系）：① **主干是哪条路**——读者最该关注的那条（叙事主线），决定判断条件怎么写；② 有几个判断、每个判断的例外是什么、要不要重试/回边；③ 出口语义怎么补（"是：大额"而不是"是"）；④ 同侧几条支、有没有长汇回线——分层与责任带在这一问里定；⑤ 每步谁负责是不是读者需求——是才加责任带（长线地面时也可加）。答案写进数据注释，再按 `references/flowchart.md` 的设计核心出图。
 
 ### Step 2 · 判定形态
 
@@ -67,34 +81,49 @@ description: 画系统结构图（分层架构、业务域划分、部署分区�
 
 **绝不混在一张图里**：结构图里的关系线 ≤ 8 条，要更多说明它是流程；流程图里没有消息标签/调用返回，泳道图里没有菱形出口条件。
 
-### Step 3 · 填数据
+### Step 3 · 填数据（一次写入，不要拆轮次）
 
-1. 复制模板：结构 → `assets/template-structure.html`；流程图 → `assets/template-flowchart.html`；泳道时序 → `assets/template-flow.html`
-2. **只改 `// ==== DATA BEGIN ====` 到 `// ==== DATA END ====` 之间**，渲染段不动
-3. 结构图的示例（模板自带 + `assets/examples/`）**只用来查语法**；骨架按 Step 1 的建模结果自己搭
+1. **一次 Write** `diagram.data.js`：文件内 = Step 1 注释 + 该图的数据常量（整份一次写完）。按形态选起稿模板与 build（**一律带 `--check`**，build 过了直接出 Step 4 自检结果）：
+   | 形态 | 起稿（只作语法参考） | 构建 + 自检 | 数据里写什么 |
+   |---|---|---|---|
+   | 结构图 | `assets/template-structure.data.js` | `node scripts/build-structure.mjs diagram.data.js --check` | `DIAGRAM` + `LINKS` |
+   | 流程图 | `assets/template-flowchart.data.js` | `node scripts/build-diagram.mjs flowchart diagram.data.js --check` | `TITLE`/`SUBTITLE`/`LANES`/`TRUNK`/`BRANCHES` |
+   | 泳道时序 | `assets/template-flow.data.js` | `node scripts/build-diagram.mjs flow diagram.data.js --check` | `TITLE`/`SUBTITLE`/`LANES`/`STAGES` |
+2. **不要** Read/Write 任意 `assets/engine-*.js`、`assets/_shell-*.html`；渲染段由 build 内联
+3. 示例（data 自带 + `assets/examples/`）**只用来查语法**；骨架按 Step 1 的建模结果自己搭
 
-不要手写坐标、不要改字号、不要改画布宽高——全部由数据推导。
+不要手写坐标、不要改字号、不要改画布宽高——全部由数据推导。最终交付必须是 `build-*` 产出的单文件 HTML（引擎已内联）。
 
-### Step 4 · 自检（必须跑，不跑不交付）
+**build 自带数据 lint**（`scripts/lint-data.mjs`，不起 Chrome）：缺常量声明、缺起止胶囊、裸「是」、密度红线、图标名不存在、d 不是数组等**读数据就能判**的错误，build 直接 `exit 1` 打印原因——**先看 build 输出改 data，不要绕过去跑 check**。几何类（重叠/出画布/过宽/稀疏）仍由 Step 4 的 check 拦。
+
+### Step 4 · 自检（落地确认，必须跑）
+
+设计已在 Step 1–3 定型；这一步只确认**渲染没走样、策略都落上了**，不是重新挑毛病。
 
 ```bash
-node scripts/check-cli.mjs diagram.html           # → JSON 打到 stdout，pass:true 才算过
-node scripts/check-cli.mjs diagram.html --shot    # 顺带出 diagram-shot.png，供下面目检
+# 推荐：build 自带 --check，一条命令出最终自检 JSON（Step 3 表里的命令即此）
+node scripts/build-structure.mjs diagram.data.js --check
+node scripts/build-diagram.mjs flowchart diagram.data.js --check
+
+# 只重跑自检（不重建）：改判据/复查时才用
+node scripts/check-cli.mjs diagram.html
+
+# 设计验收时再截图（pass:true 后、交付前；或修完想目检时）——加在 --check 后即可
+node scripts/build-structure.mjs diagram.data.js --check --shot   # → diagram-shot.png
 ```
 
-无头 Chrome 渲染成品并执行 `scripts/check.js`（等价于以前手动在浏览器 eval）。退出码：0 过 / 1 不过 / 2 跑不起来（缺 Chrome 时用环境变量 `CHROME` 指路径）。返回字段：
+**轮次建议：** 修数据过程中只跑无 `--shot` 的 `--check`；`pass:true` 且准备交付 → 同一命令加 `--shot` 并 Read PNG。流程图含长汇回/多侧支时，交付前必须目检。
 
-| 字段 | 含义 | 不过就改 |
-|---|---|---|
-| `badSizes` | 出现了三级以外的字号 | 你改了渲染段 → 还原 |
-| `offCanvas` | 文字出画布 | 文字太长 → 缩短；或设 `width` |
-| `overlaps` | 文字互相压 | 缩短标签 / 调换顺序 |
-| `outOfBox` | 文字溢出卡片 | 缩短；或把该容器的 `grow` 调大 |
-| `lint` | 一致性：结构图——深度不统一 / 同组说明有无不一 / 图标名不存在 / **非流水线横排 >5 个子项**；流程图——缺起止胶囊 / 判断无侧支 / **出口缺语义标签**（分支 label、判断裸「是」）/ 判断进了侧支 / 密度红线（节点>15、判断>5、侧支>4）/ 节点重叠过近 | 回 Step 1 补料或统一深度；结构横排过宽 → `wrap:N` 或拆子分组；流程超红线 → 拆主图 + 子流程卡 |
-| `linkHits` | 关系线穿过无关卡片 | 调整 children 顺序让两端相邻 |
-| `tooWide` | 结构图**内容自然宽度**（顶破 960 下限）且宽高比 > 2.5；窄图不查 | 横排堆太多 → `wrap:N` / 拆子分组；多列并排 → 改上下堆叠（见 deploy 示例）；流水线拉宽 → 补上下文分层加高（勿 `wrap`，会断箭头） |
+无头 Chrome 渲染成品并执行 `scripts/check.js`（等价于以前手动在浏览器 eval）。退出码：0 过 / 1 不过 / 2 跑不起来（缺 Chrome 时用环境变量 `CHROME` 指路径）。
 
-`pass:true` 后 Read `--shot` 出的 PNG 看整体：重点看**有没有一行挤、一行空**——有就调 `grow` 或拆分组；改完重跑本步直到过。
+**`pass:false` → 按 stderr / JSON 里的 `fix` 改，不要回查本表**：返回含失败字段（`badSizes` / `offCanvas` / `overlaps` / `outOfBox` / `lint` / `empty` / `linkHits` / `tooWide` / `sparseCards`）+ **`fix`：字段 → 一句修法**；check-cli 失败时也会把修法打到 stderr。按 `fix` 一次改完数据再 `--check`。
+
+**fix 也不够 → 读规则本体，不要反推**：数据类（build 阶段）在 `scripts/lint-data.mjs`；几何/字号类在 `scripts/check.js`；红线数字单源在 `scripts/rules-core.mjs`。仍不能确定归属 → 改一处数据重跑做探针（看 key 变化定位）。**禁止拿报错里的坐标对着截图量像素反推规则。**
+
+`pass:true` 后（交付前）Read `--shot` 的 PNG 做**设计验收**（对照 Step 1 的布局策略，不是找茬）：
+- 结构图：有没有一行挤一行空？层标签、流水线箭头、图标是否按建模出现？
+- 流程图：主干是否一条直线？长汇回**竖线**是否在最外走廊、不穿内侧节点？外支横线有没有压内层卡？长竖线是否有责任带打底？出口语义是否都标了？
+- 不符 → 回 Step 1 改策略或数据（**一次改完**再 build+check）；符合 → 交付。
 
 ---
 
@@ -107,52 +136,13 @@ node scripts/check-cli.mjs diagram.html --shot    # 顺带出 diagram-shot.png�
 - **颜色 = 身份**：一个语义维度一套色，贯彻到标签、图标、相关线条；不同维度可各一套（如流程图的「角色六色」与「阶段四色」）
 - **对齐优先**：同一行卡片默认等宽、跨层边线对齐；不同内容靠**关系形态**（流水线箭头、分组、侧挂）区分，而不是靠宽窄不一
 - **深度统一**：全图卡片要么都有说明，要么都没有（模板 lint 会拦）
-- **图标**：通用 Lucide 线性图标 131 个，已内置（`icon:'database'`）。**按业务词查 `references/icons.md` 选图标**；每个条目都配，选语义最贴近的；查不到合适的按 icons.md 流程新增，不硬塞。全图要么都有要么都没有。飞书画板同样可见。**绝不用 emoji**
+- **图标**：通用 Lucide 线性图标 131 个，已内置（`icon:'database'`）。**有图标就行，不追求语义精准**——按业务词查 `references/icons.md`，**最接近的即可，查不到就随手挑一个**（不要 Read `icons-preview.html` / `icons.js`，不要逐条权衡，任务内不走「新增图标」流程）。每个条目都配，全图要么都有要么都没有。飞书画板同样可见。**绝不用 emoji**
 
 ---
 
-## 载体差异
+## 载体
 
-| 载体 | 怎么做 |
-|---|---|
-| **HTML+SVG** | **首选**，用模板。SVG 必须有 `width/height/viewBox`（模板已处理） |
-| **飞书画板** | 同一份模板 HTML 导出为 **SVG**（通用）或**画板节点 JSON**，交给你环境里已有的飞书工具写入；不手算坐标 → 详见 `references/feishu-board.md` |
-| Excalidraw | 手算坐标，用 `scripts/layout_lib.py` 的 `est_w` / `timeline_ys` / `pick_label_x`；`roughness:0`、`fontFamily:2` |
-| Mermaid | 只出草图，不交付成品 |
+**HTML+SVG 是唯一主路径**（本文其余部分都讲它）。其他载体：先按 Step 1–4 做出 HTML 并通过自检，再转换——
 
-### 飞书画板速用
-
-本技能只负责产出，不绑定具体的飞书工具。先按 Step 1–4 做出 HTML 并通过自检，然后：
-
-```bash
-node scripts/export-svg.mjs diagram.html          # → diagram.svg（通用；能吃 SVG 的通道都用它）
-node scripts/to-board.mjs  diagram.html           # → diagram.board.json（只认原生节点的通道用）
-```
-
-再交给你环境里的飞书技能写入，例如 `lark-cli whiteboard +update --input_format svg --source @diagram.svg`，或 `node scripts/to-board.mjs diagram.html --board <id>`（feishu CLI）。各通道的写法见 reference。
-
----
-
-## 文件
-
-| 文件 | 用途 |
-|---|---|
-| `references/structure.md` | 结构图：盒子树写法、字段、三种范式、坑 |
-| `references/flowchart.md` | 流程图：主干直行设计核心、数据格式、参数、坑 |
-| `references/flow.md` | 泳道时序图：泳道时序写法、参数、坑 |
-| `assets/template-structure.html` | 结构图模板（自带「分层 + 侧栏」示例数据） |
-| `assets/template-flowchart.html` | 流程图模板（自带「报销审批」示例数据；可选责任带） |
-| `assets/template-flow.html` | 泳道时序模板 |
-| `assets/examples/rag.js` | **内容建模的完整范例**（顶部注释示范 Step 1 怎么写）：分组 + 双流水线 + 侧挂治理 |
-| `assets/examples/domains.js` / `deploy.js` | 业务域并列 / 部署嵌套的 DATA 段 |
-| `assets/examples/flow-fragments.js` | 时序图带 alt / loop / 注释 / 异步的克制用法（片段默认不用，见 flow.md） |
-| `assets/icons.js` / `icons-preview.html` | 图标资源（模板已内联）/ 可视预览 |
-| `scripts/build-icons.mjs` | 新增图标、重建预览（含飞书兼容归一化） |
-| `scripts/check.js` | 自检规则本体（被 check-cli 注入执行；也可手动在浏览器 eval） |
-| `scripts/check-cli.mjs` | 一键自检（Step 4）：无头 Chrome 跑 check.js，`--shot` 出目检 PNG |
-| `references/icons.md` | 图标：业务词 → 图标名索引、场景推荐组合、新增流程 |
-| `references/feishu-board.md` | 飞书画板：转换流程、节点映射、已知限制 |
-| `scripts/export-svg.mjs` | 模板 HTML → 静态自包含 SVG（飞书 SVG 通道 / 插图通用） |
-| `scripts/to-board.mjs` | 模板 HTML → 画板节点 JSON；加 `--board` 时用 feishu CLI 分批上传 |
-| `scripts/svg2board.js` | SVG → 画板节点 JSON 翻译器（被 to-board 注入；也可单独在浏览器 eval） |
-| `scripts/layout_lib.py` | Excalidraw 等非 HTML 载体手算坐标用；参数与模板一致 |
+- **飞书画板**：`node scripts/export-svg.mjs diagram.html`（SVG，通用）或 `node scripts/to-board.mjs diagram.html`（节点 JSON），写入方式与限制见 `references/feishu-board.md`
+- **Excalidraw / Mermaid / 全部文件清单**：见 `references/files.md`

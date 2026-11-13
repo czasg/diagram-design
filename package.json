@@ -1,0 +1,30 @@
+{
+  "name": "@czasg/diagram-design",
+  "version": "0.1.0",
+  "description": "Agent skill: 系统结构图 / 流程图 / 泳道时序图 — HTML+SVG 模板只填数据出图，自带几何自检。兼容 Claude Code、Codex 等支持 SKILL.md 的工具。",
+  "keywords": [
+    "agent-skills",
+    "skill",
+    "claude",
+    "claude-code",
+    "codex",
+    "diagram",
+    "architecture",
+    "flowchart",
+    "sequence-diagram"
+  ],
+  "license": "MIT",
+  "bin": {
+    "diagram-design": "bin/cli.js"
+  },
+  "files": [
+    "bin/",
+    "SKILL.md",
+    "scripts/",
+    "references/",
+    "assets/"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}

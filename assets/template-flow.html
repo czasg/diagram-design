@@ -60,12 +60,13 @@ const STAGES = [
     [5, 5, '清理临时资源', '右侧放不下 → 整体翻到左侧', 0, 1],
   ]},
 ];
+
 // ==== DATA END ====
-
-
 /* =========================================================================
    渲染段（不要改）
    ========================================================================= */
+/* 红线数字单源：build-diagram.mjs 用 scripts/rules-core.mjs 的 JSON 覆盖本占位 */
+const LIMITS = /*__LIMITS__*/{"structureRowMax":5,"fcNodes":15,"fcDecisions":5,"fcBranches":4,"fcLanesMin":2,"fcLanesMax":7,"flowFrags":3,"flowFragDepth":2,"flowNotes":3};
 const FONT = 'PingFang SC, Microsoft YaHei, Segoe UI, sans-serif';
 const FS = { title:26, body:12.5, note:10 };            // 全图只有这三级字号
 const TEXT = '#2C3441', SUB = '#8A93A3';
@@ -123,11 +124,11 @@ STAGES.forEach((s, si) => {
   s.y1 = lastB;
   y = s.y1 + GAP;
 });
-/* 克制规则：片段 ≤ 3、嵌套 ≤ 2 层、注释 ≤ 3 —— 超了说明这张图该拆，写入 lint 让 check.js 拦下 */
+/* 克制规则（红线见 rules-core.mjs）：超了说明这张图该拆，写入 lint 让 check.js 拦下 */
 const LINT = [];
-if (FRAGS.length > 3) LINT.push(`片段 ${FRAGS.length} 个（建议 ≤ 3）：只框真正影响理解的分支 / 重试，其余写进注释或拆图`);
-if (fragDepth > 2) LINT.push(`片段嵌套 ${fragDepth} 层（建议 ≤ 2）`);
-if (NOTES.length > 3) LINT.push(`注释 ${NOTES.length} 条（建议 ≤ 3）：注释多说明消息标签没写清`);
+if (FRAGS.length > LIMITS.flowFrags) LINT.push(`片段 ${FRAGS.length} 个（建议 ≤ ${LIMITS.flowFrags}）：只框真正影响理解的分支 / 重试，其余写进注释或拆图`);
+if (fragDepth > LIMITS.flowFragDepth) LINT.push(`片段嵌套 ${fragDepth} 层（建议 ≤ ${LIMITS.flowFragDepth}）`);
+if (NOTES.length > LIMITS.flowNotes) LINT.push(`注释 ${NOTES.length} 条（建议 ≤ ${LIMITS.flowNotes}）：注释多说明消息标签没写清`);
 const LINE_TOP = LANE_Y + LANE_H;
 const LINE_BOT = STAGES[STAGES.length - 1].y1 + 24;
 const LEG_Y = LINE_BOT + 36;
@@ -152,7 +153,7 @@ const estW = (s,size) => { let w=0;
   for (const c of String(s)) w += size * (c.charCodeAt(0)>127 ? 1.0 : 0.56);
   return Math.ceil(w); };
 
-/* 标签避开泳道线：候选位置打分，压线判负（与 layout_lib.pick_label_x 同参） */
+/* 标签避开泳道线：候选位置打分，压线判负（与 layout_lib.mjs 的 pick_label_x 同参） */
 function pickX(sx, ex, w) {
   const lo = Math.min(sx,ex), hi = Math.max(sx,ex);
   const minX = lo+6, maxX = hi-w-6;
@@ -316,6 +317,7 @@ LEG.forEach(([t, c, d, open], i) => {
 add(mk('circle', { cx:lx+9, cy:LEG_Y, r:9, fill:STAGES[0].color }));
 TX(lx+9, LEG_Y+3.5, '1', FS.note, '#fff', 700, 'middle');
 TX(lx+24, LEG_Y+3.5, '圆点 = 步骤序号，颜色 = 所属阶段', FS.note, '#67707F');
+
 </script>
 </body>
 </html>

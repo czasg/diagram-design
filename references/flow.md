@@ -1,8 +1,8 @@
 # 泳道时序图
 
 > 何时用：素材有**先后顺序**——谁调用谁、谁返回、第几步，且**消息传递是主角**。
-> 判断分支（「如果…就…」）≥2 个且是骨架 → 那是**流程图**，读 `flowchart.md`；两者词汇不混用：本图没有菱形出口条件，流程图没有消息标签。
-> 模板：`../assets/template-flow.html`（只改 DATA 段）
+> 与流程图（flowchart.md）的边界与词汇差异：见 SKILL.md Step 2。
+> 数据：`../assets/template-flow.data.js`（只写 TITLE/LANES/STAGES 等）→ `node scripts/build-diagram.mjs flow <data.js> --check` 出 HTML 并自检。引擎 `engine-flow.js` 勿读勿改。
 
 ## 结构
 
@@ -94,6 +94,6 @@ const STAGES = [
 3. **胶囊全灰求"语义唯一"**：整图死掉 → 胶囊六色 + 阶段色并存
 4. **颜色只上容器**：分区带彩色、箭头灰色 → 箭头、圆点全用阶段色
 5. **左侧只有名称**：下方大片空 → 大号透明编号 + 名称，整块垂直居中
-6. **跨泳道标签压线**：模板 `pickX` 候选打分已处理；手画时用 `layout_lib.pick_label_x`
+6. **跨泳道标签压线**：模板 `pickX` 候选打分已处理；手画时用 `layout_lib.mjs` 的 `pick_label_x`
 7. **底部再画一排参与者**：冗余 → 只画顶部，泳道线收在最后消息下 24px
 8. **把结构塞进泳道**：某泳道里罗列一堆组件 → 那是结构，回结构图另画一张

@@ -14,9 +14,11 @@ body{background:#EEF1F5;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",s
 <div id="canvas"><svg id="svg"></svg></div>
 <script>
 /* =========================================================================
-   流程图模板 · 主干直行（可选责任带）
+   流程图模板 · 主干直行（可选责任带 + 同侧分层走线）
    设计核心：主干一条直线（判断条件朝主路径设计，全部“是”直下），“否”侧出；
-            出口标签补语义；连线就近接口；布局居中。
+            出口标签补语义；连线就近接口；布局居中；
+            同侧多支自动分层——汇回行程远的走外层走廊，竖线不穿内侧节点
+            （入口/汇回的横线仍需横穿内层列，极端交替判断几何下可能贴卡，目检留意）。
    只改 DATA 段；渲染段不动。
    ========================================================================= */
 
@@ -50,12 +52,13 @@ const BRANCHES = [
   { from:'d2', side:'r', label:'否：驳回', style:'err', back:true, toLabel:'重提≤3次',
     nodes:[{ id:'x1', t:'退回修改', lane:0 }], to:'a', toSide:'r' },
 ];
+
 // ==== DATA END ====
-
-
 /* =========================================================================
    渲染段（不要改）
    ========================================================================= */
+/* 红线数字单源：build-diagram.mjs 用 scripts/rules-core.mjs 的 JSON 覆盖本占位 */
+const LIMITS = /*__LIMITS__*/{"structureRowMax":5,"fcNodes":15,"fcDecisions":5,"fcBranches":4,"fcLanesMin":2,"fcLanesMax":7,"flowFrags":3,"flowFragDepth":2,"flowNotes":3};
 const FONT = 'PingFang SC, Microsoft YaHei, Segoe UI, sans-serif';
 const FS = { title:26, body:12.5, note:10 };            // 全图只有这三级字号
 const TEXT = '#2C3441', SUB = '#67707F', BORDER = '#D8DEE7', PAPER = '#FFFFFF';
@@ -63,7 +66,7 @@ const STYLE = { main:{ c:'#3E63DD' }, quick:{ c:'#8A6A12' }, err:{ c:'#B4232A' }
 const LANE_PAL = [ ['#FCF8EF','#8A6A12'], ['#F5F8FE','#3E63DD'], ['#F9F5FC','#7B4A9E'], ['#F2F9F5','#1B7D57'] ];
 
 const CARD_H = 44, CAP_H = 36, DEC_H = 84;               // 节点高度
-const GAP = 46, CORR = 64, BAND_PAD = 26, TOP = 116;     // 间距 ≥44 → GAP 46
+const GAP = 64, CORR = 64, BAND_PAD = 26, TOP = 116;     // 间距 ≥44 → GAP 64（缝里要容出口标签垫片，46 观感太挤）
 const COL_X = 44, BAND_X0 = (LANES && LANES.length) ? 108 : 20, M_R = 20;
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -105,18 +108,44 @@ BRANCHES.forEach(br => {
   br.nodes.forEach(n => { n.y = cy - n.h / 2; cy += n.h + GAP; });
 });
 
-/* ---- 横向：主干居中，左右分支区对称 ---- */
+/* ---- 横向：主干居中，左右分支区对称；同侧多支分层——汇回行程远的列在外层，竖线不穿内侧节点 ---- */
 const maxW = arr => arr.reduce((m, n) => Math.max(m, n.w), 0);
 const trunkW = maxW(TRUNK);
-const sideW = s => { const bs = BRANCHES.filter(b => b.side === s);
-  return bs.length ? maxW(bs.flatMap(b => b.nodes)) + CORR + 24 : 40; };
+const COL_GAP = 20;   // 同侧分层列净距（≥20：横向同排 lint 红线），外层中线落在内层身位之外
+const mergeTravel = br => {
+  const cl = br.nodes[br.nodes.length - 1], to = byId[br.to];
+  return Math.abs((to.y + to.h / 2) - (cl.y + cl.h / 2));
+};
+// 行程短的在内、行程远的在外（顶上那条长线让到最外层）
+const sideCols = s => BRANCHES.filter(b => b.side === s)
+  .sort((a, b) => mergeTravel(a) - mergeTravel(b));
+const sideW = s => {
+  const cols = sideCols(s);
+  if (!cols.length) return 40;
+  const sum = cols.reduce((a, br) => a + maxW(br.nodes), 0);
+  return CORR + sum + (cols.length - 1) * COL_GAP + 24;
+};
 const needL = sideW('l'), needR = sideW('r');
-const bandW = Math.max(needL + trunkW + needR + 24, 960 - BAND_X0 - M_R);
+/* 左右分支区对称（设计核心 6）：按宽的一侧定区宽，主干居中后两侧都放得下。
+   若按 needL+needR 拼宽再居中，宽侧只分到一半身位 —— 外层走廊顶出带左缘、
+   盖住带名（实测：「独立执行」盖住「消息接入」，长汇回线贴着带名纵贯全图）。 */
+const zone = Math.max(needL, needR);
+const bandW = Math.max(zone * 2 + trunkW + 24, 960 - BAND_X0 - M_R);
 const W = BAND_X0 + bandW + M_R;
 const trunkX = BAND_X0 + bandW / 2;
 const innerL = trunkX - trunkW / 2 - CORR, innerR = trunkX + trunkW / 2 + CORR;
 TRUNK.forEach(n => { n.x = trunkX - n.w / 2; });
-BRANCHES.forEach(br => br.nodes.forEach(n => { n.x = br.side === 'l' ? innerL - n.w : innerR; }));
+// 内→外铺列：左列右缘对齐、右列左缘对齐；同链节点贴列缘
+const placeSide = (s, innerEdge) => {
+  let edge = innerEdge;
+  sideCols(s).forEach(br => {
+    const w = maxW(br.nodes);
+    br.nodes.forEach(n => { n.x = (s === 'l') ? edge - n.w : edge; });
+    edge = (s === 'l') ? (edge - w - COL_GAP) : (edge + w + COL_GAP);
+  });
+};
+placeSide('l', innerL);
+placeSide('r', innerR);
 const cxOf = n => n.x + n.w / 2, cyOf = n => n.y + n.h / 2;
 
 /* ---- 责任带：按内容推导，重叠处从中间分 ---- */
@@ -276,10 +305,11 @@ BRANCHES.forEach(b => {
   if (!b.nodes || !b.nodes.length) LINT.push(`分支 ${b.from}→${b.to} 没有节点`);
   if (!['quick','err'].includes(b.style)) LINT.push(`分支 ${b.from}→${b.to} 的 style 只能 quick/err`);
 });
-if (ALL.length > 15) LINT.push(`节点 ${ALL.length} 个（红线 15）：拆主图 + 子流程卡`);
-if (decs.length > 5) LINT.push(`判断 ${decs.length} 个（红线 5）：拆图`);
-if (BRANCHES.length > 4) LINT.push(`侧支 ${BRANCHES.length} 条（红线 4）：分支多说明该拆图`);
-if (LANES && LANES.length && (LANES.length < 2 || LANES.length > 7)) LINT.push('责任带 2–7 条');
+if (ALL.length > LIMITS.fcNodes) LINT.push(`节点 ${ALL.length} 个（红线 ${LIMITS.fcNodes}）：拆主图 + 子流程卡`);
+if (decs.length > LIMITS.fcDecisions) LINT.push(`判断 ${decs.length} 个（红线 ${LIMITS.fcDecisions}）：拆图`);
+if (BRANCHES.length > LIMITS.fcBranches) LINT.push(`侧支 ${BRANCHES.length} 条（红线 ${LIMITS.fcBranches}）：分支多说明该拆图`);
+if (LANES && LANES.length && (LANES.length < LIMITS.fcLanesMin || LANES.length > LIMITS.fcLanesMax))
+  LINT.push(`责任带 ${LIMITS.fcLanesMin}–${LIMITS.fcLanesMax} 条`);
 ALL.forEach(n => {
   if (LANES && LANES.length && (n.lane == null || n.lane < 0 || n.lane >= LANES.length))
     LINT.push(`节点「${n.t}」的 lane 越界/缺失`);
@@ -293,6 +323,7 @@ for (let i = 0; i < ALL.length; i++) for (let j = i + 1; j < ALL.length; j++) {
   else if (gx < 20 && gy < 20) LINT.push(`节点过近：「${a.t}」「${b.t}」（间距红线 44，横向同排 ≥20）`);
 }
 if (LINT.length) svg.dataset.lint = LINT.join('|');
+
 </script>
 </body>
 </html>
